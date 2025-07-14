@@ -1,16 +1,4 @@
-# Nifty Trading Framework
-
 A Python-based algorithmic trading framework for implementing and executing various trading strategies through the Zerodha platform.
-
-## 🎯 Framework Overview
-
-This trading framework provides a robust foundation for developing and executing algorithmic trading strategies with:
-
-- **Modular Strategy Design**: Easy-to-extend strategy framework
-- **Secure Authentication**: TOTP-based 2FA integration with Zerodha
-- **Real-time Data**: Live market data and historical data fetching
-- **Portfolio Management**: Automated trade execution and monitoring
-- **Beautiful UI**: Rich console output with progress tracking
 
 ## 🏗️ Project Structure
 
@@ -27,30 +15,6 @@ nifty/
 ├── pyproject.toml          # Project dependencies and metadata
 └── README.md              # This file
 ```
-
-## 🚀 Features
-
-### Trading Framework
-
-- **Strategy Interface**: Standardized strategy development pattern
-- **Technical Analysis**: Built-in support for technical indicators
-- **Portfolio Management**: Position tracking and automated execution
-- **Risk Controls**: Configurable trade limits and position sizing
-- **Market Data**: Real-time and historical data integration
-
-### Infrastructure
-
-- **Secure Authentication**: TOTP-based 2FA for Zerodha login
-- **Comprehensive Logging**: Rich console output with progress tracking
-- **Error Handling**: Robust network and API error management
-- **Session Management**: Persistent authenticated sessions
-
-### User Experience
-
-- **Beautiful Console Output**: Rich tables and progress bars
-- **Detailed Logging**: Step-by-step execution tracking
-- **Error Recovery**: Graceful handling of network issues
-- **Extensible Design**: Easy to add new strategies
 
 ## 📋 Prerequisites
 
@@ -72,12 +36,6 @@ nifty/
 
    ```bash
    uv sync
-   ```
-
-   Or with pip:
-
-   ```bash
-   pip install -e .
    ```
 
 ## ⚙️ Configuration
@@ -103,6 +61,12 @@ Run the trading application:
 
 ```bash
 python main.py
+```
+
+or using uv:
+
+```bash
+uv run main.py
 ```
 
 ### Framework Execution Flow
@@ -154,27 +118,6 @@ python main.py
    from strategy.my_strategy import MyStrategy
    strategy = MyStrategy(client)
    ```
-
-## ⚠️ Important Disclaimers
-
-### Trading Risks
-
-- **Financial Risk**: Trading involves substantial risk of loss
-- **Market Risk**: Past performance does not guarantee future results
-- **Strategy Risk**: No strategy guarantees profits
-
-### Technical Considerations
-
-- **Real Money**: This application places actual trades with real money
-- **Testing**: Always test thoroughly in a paper trading environment first
-- **Monitoring**: Monitor all trades and system behavior closely
-- **Backup Plans**: Have manual override procedures ready
-
-### Legal and Compliance
-
-- **Regulation**: Ensure compliance with local trading regulations
-- **Broker Terms**: Review and comply with Zerodha's terms of service
-- **Tax Implications**: Consult tax professionals for trading tax obligations
 
 ## 🔧 Development
 
