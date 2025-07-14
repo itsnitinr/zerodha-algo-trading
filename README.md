@@ -64,7 +64,7 @@ nifty/
 1. **Clone the repository:**
 
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/itsnitinr/zerodha-algo-trading.git
    cd zerodha-algo-trading
    ```
 
