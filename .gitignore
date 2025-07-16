@@ -10,3 +10,6 @@ wheels/
 .venv
 
 .env
+
+# Configuration files (may contain sensitive settings)
+config/

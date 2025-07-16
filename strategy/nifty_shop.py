@@ -12,18 +12,20 @@ from rich.panel import Panel
 
 from client.zerodha import ZerodhaClient
 from utils.logger import log_success, log_error, log_info, log_step, log_warning, get_logger
+from utils.config_manager import ConfigManager
 
 
 class NiftyShopStrategy:
     """Strategy to identify Nifty 50 stocks trading below their 20-day moving average.
     Only considers Nifty 50 stocks for sell and averaging trades."""
     
-    def __init__(self, zerodha_client: ZerodhaClient):
+    def __init__(self, zerodha_client: ZerodhaClient, force_reconfigure: bool = False):
         """
         Initialize the strategy with a Zerodha client.
         
         Args:
             zerodha_client: Authenticated Zerodha client instance
+            force_reconfigure: Force interactive reconfiguration
         """
         self.logger = get_logger("nifty_shop_strategy")
         self.client = zerodha_client
@@ -31,8 +33,19 @@ class NiftyShopStrategy:
         self.instrument_tokens = {}
         self.console = Console()
         
-        # Trading configuration
-        self.daily_trade_limit = 1  # Maximum new stocks to buy per day
+        # Initialize configuration manager
+        self.config_manager = ConfigManager()
+        
+        # Load or setup configuration
+        if self.config_manager.is_first_run() or force_reconfigure:
+            self.config = self.config_manager.interactive_setup(force_reconfigure=force_reconfigure)
+        else:
+            self.config = self.config_manager.load_config()
+        
+        # Trading configuration (now loaded from config)
+        self.daily_trade_limit = self.config["daily_trade_limit"]
+        self.profit_threshold_for_selling = self.config["profit_threshold_for_selling"]
+        self.loss_threshold_for_averaging = self.config["loss_threshold_for_averaging"]
         
         # Mock trade management (in real implementation, this would come from actual broker/database)
         self.mock_trades = []  # List of mock trades to simulate holdings
@@ -54,12 +67,13 @@ class NiftyShopStrategy:
         # Display strategy initialization in a beautiful panel
         panel = Panel(
             f"[bold cyan]Nifty Shop Strategy[/bold cyan]\n\n"
-            f"💰 Sell Logic: Nifty 50 holdings with >5% profit\n"
+            f"💰 Sell Logic: Nifty 50 holdings with >{self.profit_threshold_for_selling}% profit\n"
             f"📈 Buy Logic: Find stocks trading below 20-day moving average\n"
-            f"🔄 Averaging: Only Nifty 50 holdings with -3% fall\n"
+            f"🔄 Averaging: Only Nifty 50 holdings with {self.loss_threshold_for_averaging}% fall\n"
             f"🎯 Universe: Nifty 50 ({len(self.symbols)} stocks)\n"
             f"📊 Target: Top 5 stocks with highest deviation below 20DMA\n"
-            f"⚡ Execution: Sell → Analysis → Buy",
+            f"⚡ Execution: Sell → Analysis → Buy\n"
+            f"📊 Daily Limit: {self.daily_trade_limit} new stocks per day",
             title="[bold green]🚀 Strategy Initialized[/bold green]",
             border_style="bright_blue"
         )
@@ -68,6 +82,44 @@ class NiftyShopStrategy:
     def get_name(self) -> str:
         """Get strategy name for logging."""
         return "NiftyShopStrategy"
+    
+    def reconfigure(self) -> bool:
+        """
+        Force reconfiguration of strategy parameters.
+        
+        Returns:
+            bool: True if reconfiguration was successful, False otherwise
+        """
+        try:
+            log_step("Reconfiguration", "Starting interactive reconfiguration")
+            
+            # Run interactive setup with force flag
+            new_config = self.config_manager.interactive_setup(force_reconfigure=True)
+            
+            # Update instance variables with new configuration
+            self.config = new_config
+            self.daily_trade_limit = new_config["daily_trade_limit"]
+            self.profit_threshold_for_selling = new_config["profit_threshold_for_selling"]
+            self.loss_threshold_for_averaging = new_config["loss_threshold_for_averaging"]
+            
+            # Display updated configuration
+            updated_panel = Panel(
+                f"[bold green]✅ Configuration Updated Successfully[/bold green]\n\n"
+                f"[cyan]Daily Trade Limit:[/cyan] {self.daily_trade_limit}\n"
+                f"[cyan]Profit Threshold:[/cyan] {self.profit_threshold_for_selling}%\n"
+                f"[cyan]Loss Threshold:[/cyan] {self.loss_threshold_for_averaging}%\n\n"
+                f"[yellow]Strategy is ready to run with new settings![/yellow]",
+                title="🔧 Configuration Updated",
+                border_style="green"
+            )
+            self.console.print(updated_panel)
+            
+            log_success("Strategy reconfiguration completed successfully")
+            return True
+            
+        except Exception as e:
+            log_error(f"Error during reconfiguration: {str(e)}")
+            return False
     
     def _get_authenticated_session(self) -> requests.Session:
         """Get authenticated session from Zerodha client."""
@@ -604,13 +656,13 @@ class NiftyShopStrategy:
     
     def initiate_sell(self) -> int:
         """
-        Check holdings for stocks with >5% profit and sell them.
+        Check holdings for stocks with >configured profit threshold and sell them.
         Only considers Nifty 50 stocks for selling.
         
         Returns:
             int: Number of stocks sold
         """
-        log_step("Sell Logic", "Checking Nifty 50 holdings for profitable positions (>5% profit)")
+        log_step("Sell Logic", f"Checking Nifty 50 holdings for profitable positions (>{self.profit_threshold_for_selling}% profit)")
         
         # Get current holdings
         all_holdings = self._get_current_holdings()
@@ -628,7 +680,7 @@ class NiftyShopStrategy:
         
         # Display sell configuration
         sell_config_panel = Panel(
-            f"[bold]Profit Threshold:[/bold] >5% from average buy price\n"
+            f"[bold]Profit Threshold:[/bold] >{self.profit_threshold_for_selling}% from average buy price\n"
             f"[bold]Total Holdings:[/bold] {len(all_holdings)} stocks\n"
             f"[bold]Nifty 50 Holdings:[/bold] {len(current_holdings)} stocks\n"
             f"[bold]Action:[/bold] Sell profitable Nifty 50 positions only",
@@ -669,7 +721,7 @@ class NiftyShopStrategy:
                 # Calculate profit percentage
                 profit_pct = ((current_price - entry_price) / entry_price) * 100
                 
-                if profit_pct > 5.0:
+                if profit_pct > self.profit_threshold_for_selling:
                     profitable_holdings.append((holding, profit_pct))
                     status = "🎯 SELL TARGET"
                     status_style = "bold green"
@@ -726,15 +778,15 @@ class NiftyShopStrategy:
         
         else:
             no_sell_panel = Panel(
-                f"[yellow]No holdings found with >5% profit[/yellow]\n\n"
-                f"• All holdings are below 5% profit threshold\n"
+                f"[yellow]No holdings found with >{self.profit_threshold_for_selling}% profit[/yellow]\n\n"
+                f"• All holdings are below {self.profit_threshold_for_selling}% profit threshold\n"
                 f"• No sell orders will be placed\n"
                 f"• Proceeding to buy logic...",
                 title="📊 No Sell Opportunities",
                 border_style="yellow"
             )
             self.console.print(no_sell_panel)
-            log_info(f"{self.get_name()}: No holdings above 5% profit threshold - no sell orders placed")
+            log_info(f"{self.get_name()}: No holdings above {self.profit_threshold_for_selling}% profit threshold - no sell orders placed")
         
         # Sell summary
         if stocks_sold > 0:
@@ -768,7 +820,7 @@ class NiftyShopStrategy:
             f"[bold]Eligible Stocks:[/bold] {len(stock_list)}\n"
             f"[bold]Current Holdings:[/bold] {len(current_holdings)} stocks (all)\n"
             f"[bold]Nifty 50 Holdings:[/bold] {len([h for h in current_holdings if h['tradingSymbol'] in self.symbols])} stocks\n"
-            f"[bold]Averaging Threshold:[/bold] -3% from last buy price (Nifty 50 only)",
+            f"[bold]Averaging Threshold:[/bold] {self.loss_threshold_for_averaging}% from last buy price (Nifty 50 only)",
             title="🎯 Trading Configuration",
             border_style="blue"
         )
@@ -880,7 +932,7 @@ class NiftyShopStrategy:
                         change_pct = 0.0
                     
                     # Determine status for averaging
-                    if change_pct <= -3:
+                    if change_pct <= self.loss_threshold_for_averaging:
                         status = "🎯 Eligible for Averaging"
                         status_style = "bold green"
                     else:
@@ -897,8 +949,8 @@ class NiftyShopStrategy:
                 
                 self.console.print(averaging_table)
                 
-                # Filter stocks that have fallen further than 3% since last buy
-                df = df[df['ChangePct'] <= -3]
+                # Filter stocks that have fallen further than configured threshold since last buy
+                df = df[df['ChangePct'] <= self.loss_threshold_for_averaging]
                 
         except Exception as e:
             log_error(f"{self.get_name()}: Error while consolidating Stocks for averaging: {str(e)}")
@@ -933,14 +985,14 @@ class NiftyShopStrategy:
         no_trade_panel = Panel(
             f"[yellow]No eligible stocks found for trading today:[/yellow]\n\n"
             f"• All top 5 stocks already in holdings\n"
-            f"• No Nifty 50 holdings have fallen below -3% threshold\n"
+            f"• No Nifty 50 holdings have fallen below {self.loss_threshold_for_averaging}% threshold\n"
             f"• No new trades will be placed today",
             title="📊 No Trading Opportunity",
             border_style="yellow"
         )
         self.console.print(no_trade_panel)
         
-        log_info(f"{self.get_name()}: No Nifty 50 stocks in holding have fallen below threshold. "
+        log_info(f"{self.get_name()}: No Nifty 50 stocks in holding have fallen below {self.loss_threshold_for_averaging}% threshold. "
                  "So No Stock Buy Trades for today")
     
     def execute_strategy(self) -> None:

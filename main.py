@@ -1,3 +1,4 @@
+import argparse
 from client.zerodha import ZerodhaClient
 from strategy.nifty_shop import NiftyShopStrategy
 from utils.logger import log_success, log_error, log_info, log_step, log_api_call, app_logger
@@ -19,6 +20,32 @@ NIFTY_50_SYMBOLS = [
 def main():
     """Main application entry point with comprehensive logging."""
     
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Nifty Shop Strategy - Automated trading strategy for Nifty 50 stocks",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py                    # Run strategy with existing configuration
+  python main.py --reconfigure      # Force reconfiguration of strategy parameters
+  python main.py --config-only      # Only configure parameters, don't run strategy
+        """
+    )
+    
+    parser.add_argument(
+        "--reconfigure", 
+        action="store_true",
+        help="Force interactive reconfiguration of strategy parameters"
+    )
+    
+    parser.add_argument(
+        "--config-only",
+        action="store_true", 
+        help="Only configure parameters, don't run the strategy"
+    )
+    
+    args = parser.parse_args()
+    
     log_step("Application Start", "🚀 Starting Nifty Trading Application")
     
     try:
@@ -31,10 +58,16 @@ def main():
         
         log_success("Authentication completed! Session is ready for trading operations")
         
-        # Initialize and run strategy
+        # Initialize strategy with configuration options
         log_step("Strategy Setup", "Initializing Nifty Shop Strategy")
-        strategy = NiftyShopStrategy(client)
+        strategy = NiftyShopStrategy(client, force_reconfigure=args.reconfigure)
         
+        # If config-only mode, just configure and exit
+        if args.config_only:
+            log_success("🎯 Configuration completed! Use 'python main.py' to run the strategy.")
+            return 0
+        
+        # Run strategy
         log_step("Strategy Execution", "Running complete strategy: analysis + trading logic")
         strategy.execute_strategy()
         
