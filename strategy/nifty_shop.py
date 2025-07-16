@@ -15,7 +15,8 @@ from utils.logger import log_success, log_error, log_info, log_step, log_warning
 
 
 class NiftyShopStrategy:
-    """Strategy to identify Nifty 50 stocks trading below their 20-day moving average."""
+    """Strategy to identify Nifty 50 stocks trading below their 20-day moving average.
+    Only considers Nifty 50 stocks for sell and averaging trades."""
     
     def __init__(self, zerodha_client: ZerodhaClient):
         """
@@ -53,8 +54,9 @@ class NiftyShopStrategy:
         # Display strategy initialization in a beautiful panel
         panel = Panel(
             f"[bold cyan]Nifty Shop Strategy[/bold cyan]\n\n"
-            f"💰 Sell Logic: Holdings with >5% profit\n"
+            f"💰 Sell Logic: Nifty 50 holdings with >5% profit\n"
             f"📈 Buy Logic: Find stocks trading below 20-day moving average\n"
+            f"🔄 Averaging: Only Nifty 50 holdings with -3% fall\n"
             f"🎯 Universe: Nifty 50 ({len(self.symbols)} stocks)\n"
             f"📊 Target: Top 5 stocks with highest deviation below 20DMA\n"
             f"⚡ Execution: Sell → Analysis → Buy",
@@ -442,16 +444,20 @@ class NiftyShopStrategy:
             
             log_success(f"Successfully fetched {len(converted_holdings)} holdings from Zerodha")
             
-            # Display holdings summary
+            # Display holdings summary - only show Nifty 50 stocks
             if converted_holdings:
-                holdings_summary_table = Table(title="💼 Current Holdings from Zerodha")
+                # Filter to only show Nifty 50 holdings
+                nifty_50_holdings = [holding for holding in converted_holdings if holding['tradingSymbol'] in self.symbols]
+                other_holdings_count = len(converted_holdings) - len(nifty_50_holdings)
+                
+                holdings_summary_table = Table(title="💼 Current Nifty 50 Holdings from Zerodha")
                 holdings_summary_table.add_column("Symbol", style="cyan")
                 holdings_summary_table.add_column("Qty", style="white") 
                 holdings_summary_table.add_column("Avg Price", style="yellow")
                 holdings_summary_table.add_column("LTP", style="green")
                 holdings_summary_table.add_column("P&L", style="red")
                 
-                for holding in converted_holdings:
+                for holding in nifty_50_holdings:
                     pnl_color = "green" if holding['pnl'] >= 0 else "red"
                     holdings_summary_table.add_row(
                         holding['tradingSymbol'],
@@ -462,6 +468,18 @@ class NiftyShopStrategy:
                     )
                 
                 self.console.print(holdings_summary_table)
+                
+                # Show summary of filtered holdings
+                if other_holdings_count > 0:
+                    holdings_filter_info = Panel(
+                        f"[cyan]Total Holdings:[/cyan] {len(converted_holdings)}\n"
+                        f"[cyan]Nifty 50 Holdings:[/cyan] {len(nifty_50_holdings)}\n"
+                        f"[dim]Other Holdings:[/dim] {other_holdings_count} (not shown)\n\n"
+                        f"[yellow]Note: Only Nifty 50 holdings are displayed and considered for trading[/yellow]",
+                        title="📊 Holdings Filter Summary",
+                        border_style="blue"
+                    )
+                    self.console.print(holdings_filter_info)
             
             return converted_holdings
             
@@ -587,24 +605,33 @@ class NiftyShopStrategy:
     def initiate_sell(self) -> int:
         """
         Check holdings for stocks with >5% profit and sell them.
+        Only considers Nifty 50 stocks for selling.
         
         Returns:
             int: Number of stocks sold
         """
-        log_step("Sell Logic", "Checking holdings for profitable positions (>5% profit)")
+        log_step("Sell Logic", "Checking Nifty 50 holdings for profitable positions (>5% profit)")
         
         # Get current holdings
-        current_holdings = self._get_current_holdings()
+        all_holdings = self._get_current_holdings()
+        
+        if not all_holdings:
+            log_info("No holdings found - skipping sell logic")
+            return 0
+        
+        # Filter holdings to only include Nifty 50 stocks
+        current_holdings = [holding for holding in all_holdings if holding['tradingSymbol'] in self.symbols]
         
         if not current_holdings:
-            log_info("No holdings found - skipping sell logic")
+            log_info("No Nifty 50 holdings found - skipping sell logic")
             return 0
         
         # Display sell configuration
         sell_config_panel = Panel(
             f"[bold]Profit Threshold:[/bold] >5% from average buy price\n"
-            f"[bold]Current Holdings:[/bold] {len(current_holdings)} stocks\n"
-            f"[bold]Action:[/bold] Sell profitable positions",
+            f"[bold]Total Holdings:[/bold] {len(all_holdings)} stocks\n"
+            f"[bold]Nifty 50 Holdings:[/bold] {len(current_holdings)} stocks\n"
+            f"[bold]Action:[/bold] Sell profitable Nifty 50 positions only",
             title="💰 Sell Logic Configuration",
             border_style="red"
         )
@@ -739,8 +766,9 @@ class NiftyShopStrategy:
         config_panel = Panel(
             f"[bold]Daily Trade Limit:[/bold] {self.daily_trade_limit} new stocks\n"
             f"[bold]Eligible Stocks:[/bold] {len(stock_list)}\n"
-            f"[bold]Current Holdings:[/bold] {len(current_holdings)} stocks\n"
-            f"[bold]Averaging Threshold:[/bold] -3% from last buy price",
+            f"[bold]Current Holdings:[/bold] {len(current_holdings)} stocks (all)\n"
+            f"[bold]Nifty 50 Holdings:[/bold] {len([h for h in current_holdings if h['tradingSymbol'] in self.symbols])} stocks\n"
+            f"[bold]Averaging Threshold:[/bold] -3% from last buy price (Nifty 50 only)",
             title="🎯 Trading Configuration",
             border_style="blue"
         )
@@ -781,16 +809,23 @@ class NiftyShopStrategy:
             return
         
         log_info(f"{self.get_name()}: No new Stocks - All Stocks screened are already part of holding. "
-                 "Checking existing holdings for averaging..")
+                 "Checking existing Nifty 50 holdings for averaging..")
         
         # If all the 5 eligible Stocks are already part of our holding, then
-        # we will check all stocks that we are holding and find out which ones have fallen
+        # we will check Nifty 50 stocks that we are holding and find out which ones have fallen
         # further by -3%. Choose the one that has fallen the most and buy it for averaging
+        
+        # Filter current holdings to only include Nifty 50 stocks for averaging
+        nifty_holdings = [holding for holding in current_holdings if holding['tradingSymbol'] in self.symbols]
+        
+        if not nifty_holdings:
+            log_info(f"{self.get_name()}: No Nifty 50 holdings found for averaging analysis")
+            return
         
         df = pd.DataFrame()
         
         try:
-            for holding in current_holdings:
+            for holding in nifty_holdings:
                 try:
                     new_row = {
                         'Symbol': holding['tradingSymbol'], 
@@ -815,7 +850,7 @@ class NiftyShopStrategy:
                 df.columns = ['Symbol', 'LastBuyPrice', 'Date']
                 
                 # Create averaging analysis table
-                averaging_table = Table(title="📉 Averaging Analysis - Current Holdings")
+                averaging_table = Table(title="📉 Averaging Analysis - Nifty 50 Holdings")
                 averaging_table.add_column("Symbol", style="cyan")
                 averaging_table.add_column("Last Buy Price", style="white")
                 averaging_table.add_column("Current Price", style="yellow")
@@ -898,14 +933,14 @@ class NiftyShopStrategy:
         no_trade_panel = Panel(
             f"[yellow]No eligible stocks found for trading today:[/yellow]\n\n"
             f"• All top 5 stocks already in holdings\n"
-            f"• No holdings have fallen below -3% threshold\n"
+            f"• No Nifty 50 holdings have fallen below -3% threshold\n"
             f"• No new trades will be placed today",
             title="📊 No Trading Opportunity",
             border_style="yellow"
         )
         self.console.print(no_trade_panel)
         
-        log_info(f"{self.get_name()}: No Stocks in holding have fallen below threshold. "
+        log_info(f"{self.get_name()}: No Nifty 50 stocks in holding have fallen below threshold. "
                  "So No Stock Buy Trades for today")
     
     def execute_strategy(self) -> None:
